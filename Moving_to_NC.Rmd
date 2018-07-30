@@ -10,8 +10,7 @@ knitr::opts_chunk$set(echo = TRUE,
 ```
 
 
-Moving Story
-=====
+## Moving Story
 
 - Currently you live in Juneau and you are taking a new job in Raleigh, North Carolina
 
@@ -19,8 +18,7 @@ Moving Story
 
 - Question:  What's the mean temperature in Raleigh in September?
 
-More formally
-===========
+#### More formally
 
 - You will observe daily September temperature measurements in Raleigh $y_1, ..., y_n$
 
@@ -30,8 +28,7 @@ More formally
 
 - Have some ``prior" beliefs about $\mu$
 
-Construct a prior
-===========
+## Construct a prior
 
 - Make a guess at ``most likely" value of $\mu$ -- say it is 70 degrees (the median)
 
@@ -39,8 +36,7 @@ Construct a prior
 
 - Find a normal curve for $\mu$ that matches this information
 
-Using R function
-==========
+#### Using R function
 
 - Function ```normal.select``` finds the matching normal curve 
 
@@ -53,8 +49,7 @@ normal.select(quantile_1, quantile_2)
 
 - So my prior is N(65, 7.80)
 
-Likelihood
-===============
+## Likelihood
 
 - Observe some September temps $y_1, ..., y_n$
 
@@ -64,8 +59,7 @@ $$
 L(\mu) = \prod_{j=1}^n f_N(y_j | \mu, \sigma) = f_N\left(\bar y|\mu, \frac{\sigma}{\sqrt{n}}\right)
 $$
 
-Posterior
-==========
+## Posterior
 
 - Posterior $\propto$ Prior $\times$ Likelihood
 
@@ -77,8 +71,7 @@ $$
 
 - Conjugate analysis -- prior and posterior are both in normal family
 
-Nice updating formula
-==========
+#### Nice updating formula
 
 - Precision is the reciprocal of the variance
 
@@ -93,8 +86,7 @@ $$
 \frac{n / \sigma^2}{n / \sigma^2 + 1 / 7.8^2}  \bar y + \frac{1 / 7.8^2}{n / \sigma^2 + 1 / 7.8^2} 65
 $$
 
-Collect some temperatures
-========
+#### Collect some temperatures
 
 - Collect 10 temps, compute $\bar y$ and standard error $\sigma / \sqrt{n}$
 
@@ -107,8 +99,7 @@ df <- head(select(filter(Temp, Month == 9), Raleigh),
 (se <- 10 / sqrt(10))
 ```
 
-Use R function to update 
-=========
+#### Use R function to update 
 
 ```{r}
 library(TeachBayes)
@@ -117,8 +108,7 @@ normal_update(c(65, 7.8), c(71.83, 3.16), teach=TRUE)
 
 - Posterior is N(70.86, 2.92)
 
-Prior, Likelihood, and Posterior
-=======
+#### Prior, Likelihood, and Posterior
 
 ```{r, fig.height = 5}
 normal_par <- list(c(65, 7.8), c(71.83, 3.16),
@@ -126,8 +116,7 @@ normal_par <- list(c(65, 7.8), c(71.83, 3.16),
 many_normal_plots(normal_par)
 ```
 
-Interval estimate
-=======
+#### Interval estimate
 
 - A 90% interval estimate is an interval that covers 90% of the posterior 
 
@@ -135,15 +124,13 @@ Interval estimate
 normal_interval(0.9, c(70.9, 2.9))
 ```
 
-Is it likely $\mu$ > 75 degrees?
-========
+#### Is it likely $\mu$ > 75 degrees?
 
 ```{r, fig.height = 5}
 normal_area(75, 90, c(70.9, 2.9))
 ```
 
-Prediction
-=============
+## Prediction
 
 - Want to predict tomorrow's temperature in Raleigh
 
@@ -161,8 +148,7 @@ $$
 
 - Construct a 90% prediction interval
 
-Aspects of Bayes in this problem
-============
+## Aspects of Bayes in this problem
 
 - Incorporate prior beliefs about average temperature
 
