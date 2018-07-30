@@ -1,0 +1,578 @@
+---
+title: "Streakiness"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      message = FALSE, warnings = FALSE)
+```
+
+## Was Dustin Pedroia streaky in the 2008 season?
+
+-  Pedroia had 628 batting opportunities -- for each opportunity, observe Hit (1) or Out (0).
+
+-  Here is some of the data:
+
+```{r, echo = FALSE}
+library(tidyverse)
+library(BayesTestStreak)
+library(LearnBayes)
+load("data/dustin.Rdata")
+pd %>% 
+  filter(ab_flag == TRUE) %>% 
+  mutate(H = ifelse(hit_value > 0, 1, 0)) -> dustin 
+head(dustin)
+```
+
+- Focus on the spacings between successive hits that we put in
+a vector y:
+
+```{r}
+y <- find.spacings(dustin$H)$y
+y[1:10]
+```
+
+
+## Plan to Investigate Streakiness
+
+- Assume the spacings are independent with a geometric
+distribution with a constant hitting probability $p$
+
+- Fit the model using some prior knowledge about $p$
+
+- Check the goodness of fit of the model
+
+- We'll find that the geometric model is inappropriate and find a 
+new model (beta/geometric) that allows for variability in the
+hitting probability $p$
+
+- We'll introduce some modern simulation methods for
+exploring a posterior distribution
+
+
+#### A Geometric Sampling Model
+
+- Assume the spacings $y_1, ..., y_n$ are independent where $y_i$ is
+geometric with probability $p$.
+
+$$
+f (y_i | p) = p(1 - p)^y, y = 0, 1, 2, ... 
+$$
+
+- Likelihood function $L(p)$ is joint density of the spacings
+viewed as a function of the parameter $p$.
+
+$$
+L(p) = \prod_{i=1}^n f(y_i | p) = p^n(1 -p)^s
+$$
+
+where $s = \sum y$
+is the sum of the observations and the $n$ is the
+sample size.
+
+
+#### The Prior
+
+- Next step in a Bayesian analysis is to assign a prior density $g(p)$.
+
+- A prior reflects one's beliefs about the location of Pedroia's
+batting probability before sampling.
+
+- Here's my beliefs: $P(p < 0.310) = 0.5; P(p < 0.350) = 0.8$
+
+- Then I find a beta prior density $g(p)$ that matches these
+beliefs.
+
+```{r}
+(ab <- beta.select(list(p = .5, x = .31), 
+                  list(p = .8, x = .35)))
+a <- ab[1]
+b <- ab[2]
+```
+
+#### The Posterior
+
+- Observe the data. We use R to compute the sample size $n$
+and the sum of observations $s$.
+
+```{r}
+(n <- length(y))
+(s <- sum(y))
+```
+
+- By Bayes' rule, posterior density of p is proportional to the
+product of the likelihood $L(p)$ and the beta prior $g(p)$.
+
+
+$$
+g(p|y) \propto p^n(1 - p)^s \times p^{a-1}(1 - p)^{b-1}
+$$
+
+#### Bayes' Rule
+
+- Substituting the observed values of $n$ = 213 and $s$ = 438, and
+the beta parameter values $a = 31, b = 68$, we obtain the
+posterior density
+
+$$
+g(p | y) \propto p^{213+31-1} (1 - p)^{438 + 68 - 1}
+$$
+
+which we recognize as a beta density with shape parameters
+$a_1 = 244$ and $b_1 = 506$.
+
+- R package contains a set of functions for plotting a beta
+density, computing beta probabilities and quantiles, and for
+simulating beta variates and these are all helpful for
+summarizing the posterior density.
+
+#### Simulation Approach for Summarizing the Posterior
+
+- Simulate a large independent sample from the posterior
+density.
+
+```{r}
+p <- rbeta(1000, n + a, s + b)
+```
+
+- Use data analysis graphs and summaries of the simulated
+sample to learn about the parameter.
+
+#### Graph the Posterior
+
+-- Plot the posterior density using the R functions hist (can use
+density for a smoother density estimate):
+
+```{r}
+hist(p, main = "")
+```
+
+#### Summarize the Posterior
+
+- Summarize the posterior density by finding the .05, .5, .95
+quantiles of the gamma density.
+
+```{r}
+quantile(p, c(0.05, 0.5, 0.95))
+```
+
+
+- A point estimate at $p$ is the posterior median 0.326. A 90%
+interval estimate for $p$ is found by the 5th and 95th
+percentiles (0.297, 0.355).
+
+- Is it likely that Pedroia's true batting ability exceeds 0.340?
+Answer this by computing the probability that p is larger than
+0.340.
+
+```{r}
+mean(p > 0.340)
+```
+
+#### The Predictive Distribution
+
+- Two key distributions in a Bayesian analysis: the posterior
+distribution and the predictive distribution.
+
+- Given sampling density $f(y|p)$ and current beliefs about p are
+given by the distribution $g(p)$.
+
+- The predictive density of $y$ is given by
+
+$$
+f (y) = \int
+f (y | p)g(p)dp
+$$
+
+- The predictive density can be used to predict future
+observation values $y$.
+
+#### Predicting Future Spacings
+
+- After data is observed, current beliefs about p are reflected in
+Beta(244, 506) distribution.
+
+- Suppose we wish to predict spacings $y_1^*, ... y^*_{213}$
+(we observed
+213 spacings in the 2008 season).
+
+- Density of these future counts is given by
+
+$$
+f(y^*) = \int \prod Geom(y_i^*; p) Beta(p, 244, 506) dp
+$$
+
+
+- Easy to simulate values of $y^*$ by simulation.
+
+- Simulate p from Beta(244, 506)
+
+- Simulate 
+$y_1^*, ... y^*_{213}$ from Geometric($p$)
+
+#### Prediction on R
+
+- Write a short function to simulate one future sample of
+spacings.
+
+```{r}
+predict <- function() {
+  p <- rbeta(1, 244, 506)
+  rgeom(213, p)
+}
+```
+
+
+- Simulate one sample.
+
+```{r}
+predict()
+```
+
+#### Model Checking
+
+- Question: do the simulated predicted counts from the fitted
+model resemble the actual counts?
+
+- Answer this tabulating the observed and predicting counts.
+
+- We'll see that the actual counts look more spread out than
+the predicted counts.
+
+#### Comparing Predicted and Actual Counts
+
+I Use table to tabulate actual counts:
+
+```{r}
+table(y)
+```
+
+- Use predict to simulate the counts and tabulate:
+
+```{r}
+ys <- predict()
+table(ys)
+```
+
+- Do you see any differences between the predicted and actual
+counts?
+
+
+#### Model Checking by the Predictive Distribution
+
+- Simulate values from the (posterior) predictive distribution.
+
+- Compute value of a checking function $T(y^*)$ (here
+$T(y^*) = SD(y^*)$ would be a good choice).
+
+- Repeat simulation many times { get distribution of checking
+function $T(y^*)$.
+
+- See if Tobserved is consistent with this distribution.
+
+- If $T_{observed}$ is ``extreme", indicates model misfit.
+
+
+#### The Example
+
+- Write function to simulate sample from $y^*$ and compute
+$SD(y^*)$.
+
+```{r}
+model.check <- function(){
+  p <- rbeta(1,244,506)
+  ys <- rgeom(n, p)
+  sd(ys)
+}
+```
+
+- Repeat this simulation 1000 times and collect values of T.
+
+```{r}
+T <- replicate(1000, model.check())
+```
+
+- Construct histogram of T and show value of $T_{observed}$ by a
+vertical line.
+
+```{r, fig.height = 3}
+hist(T)
+abline(v = sd(y), lwd = 3, col = "red")
+```
+
+- There is more dispersion in the data than predicted from the
+geometric model.
+
+
+## A Overdispersion Model: Beta/Geometric
+
+- Assume $y_i$ is Geometric with parameter 
+$p_i, i = 1, ..., n$.
+
+- $p_i$ distributed $Beta(K, \eta)$
+
+- $(K; \eta)$ have (weakly informative) prior
+
+$$
+g(K, \eta) = \frac{1}{\eta(1-\eta)}\frac{1}{(1+K)^2}
+$$
+
+- Want to learn about $K$ --  indicates degree of overdispersion in
+data.
+
+- As K approaches $\infty$, model approaches Geometric($p$).
+
+#### Posterior of 2nd Stage Parameters
+
+- One can show that the marginal posterior density of $(K, \eta)$ is
+
+$$
+g(K \eta | y) \propto g(K, \eta) \prod_{i=1}^n f(y_i | K, \eta)
+$$ 
+
+where
+
+$$
+f(y_i | K, \eta) = \frac{B(K\eta + 1, K(1-\eta)+y_j)}{B(K\eta, K(1-\eta))}
+$$
+
+- Want to summarize this distribution for inference.
+
+- Problem: we can't use direct simulation since this is not a
+familiar functional form.
+
+#### Summarization of the Posterior Using R
+
+- Write a R function that computes the logarithm of the
+posterior density.
+
+- Write log posterior as
+
+$$
+\log g(K, \eta | y) = \log g(K, \eta) + \sum_{i=1}^n log f(y_i | K \eta),
+$$
+
+where
+
+$$
+\log f(y_i | K, \eta) = \log B(K \eta + 1, K (1-\eta) + y_j) - \log B(K\eta, K (1-\eta))
+$$
+
+- Helpful to transform posterior to ($\theta_1, \theta_2$) = (logit $\eta$, $\log K$)
+
+#### Why are We Transforming the Parameters?
+
+- Posterior is very right skewed in $K$.
+
+- Accuracy of normal approximation will be poor.
+
+- Can improve things by a suitable reexpression so that each
+parameter is real-valued.
+
+- Reexpress to ($\theta_1, \theta_2$) = (logit $\eta$, $\log K$).
+
+- Write the log posterior that is a function of $(\theta_1, \theta_2)$
+
+- Don't forget the Jacobian!
+
+#### R Function to Compute Log Posterior
+
+- theta is vector of parameters (logit $\eta$, $\log K$)
+
+- y is vector of counts
+
+- output is the value of the log posterior evaluated at theta
+
+```{r}
+beta.geom <- function(theta, y){
+  eta <- exp(theta[1]) / (1 + exp(theta[1]))
+  K <- exp(theta[2])
+  N <- length(y)
+  a <- K * eta
+  b <- K * (1 - eta)
+  sum(lbeta(a + 1, y + b)) - N * lbeta(a, b) +
+     theta[2] - 2 * log(1 + exp(theta[2]))
+}
+```
+
+#### Summarizing the Posterior by the Mode
+
+- Use an algorithm such as Newton's method to find the
+posterior model.
+
+- This algorithm is implemented in the function laplace in the
+LearnBayes package.
+
+- Inputs to laplace are
+(1) the function defining the log posterior,
+(2) guess at the posterior mode,
+(3) any data used in the log posterior
+
+- Output of laplace is posterior mode $\hat \theta$ and estimate $V$ at
+variance-covariance matrix.
+
+- Approximately, posterior of $\theta$ is $N(\hat \theta, V)$
+
+#### R Code to Find the Mode
+
+```{r}
+guess.at.mode <- c(1, 1)
+fit <- laplace(beta.geom, guess.at.mode, y)
+fit$mode
+fit$var
+```
+
+#### Posterior Normal Approximation
+
+-  Marginal posterior of $\log K$ is approximately N(2.90,
+0.285).
+
+- 90% interval estimate for $\log K$ is
+
+$$
+(2.90 - 1.645 \times 0.285, 2.90 + 1.645 \times
+0.285)
+$$
+
+- This approximation is a good starting point in the
+simulation-based methods of fitting the model.
+
+- How accurate is this approximation?
+
+#### Plot the Posterior
+
+- Choose a viewing interval of (-1.1, 0) for logit $\eta$ and (1, 9) for
+$\log K$.
+
+```{r}
+ mycontour(beta.geom, c(-1.1, 0, 1, 9), y)
+```
+
+#### Markov Chain Monte Carlo Fitting
+
+- Set up a Markov Chain to explore the posterior distribution.
+
+- Under general conditions, the limiting distribution of the chain
+will be the posterior density of interest.
+
+- There are general-purpose Markov Chain algorithms that work
+for many problems.
+
+#### Random Walk Metropolis-Hastings Algorithm
+
+- Given that the chain is at a current value $\theta^{(i)}$, choose a
+proposal value $\theta^{(p)}$ that is in a neighborhood of the current
+value.
+
+- Compute a probability $P$ of moving to the proposal value.
+
+- With probability $P$, the next value in the chain is the proposal
+value; other the next value is the current value.
+
+- Main task is to choose a reasonable neighborhood by the
+selection of $cV$ , where $V$ is an approximate
+variance-covariance matrix and $c$ is a scale factor.
+
+- Want acceptance rate of the algorithm to be approximately 20% - 40%.
+
+
+#### R function rwmetrop
+
+```
+rwmetrop(logpost, proposal, start, m, par)
+```
+
+- logpost: function defining the log posterior density
+
+- proposal: a list containing var, an estimated
+variance-covariance matrix, and scale, the Metropolis scale
+factor
+
+-  start: vector containing the starting value of the parameter
+
+-  m: the number of iterations of the chain
+
+- par: data that is used in the function logpost
+
+
+#### MCMC for the example
+
+- beta.geom contains the definition of the log posterior
+
+- Have already stored the output of laplace in the variable
+fit.
+
+- Have estimate at var-cov matrix in fit$var.
+
+- Starting value can be fit$mode
+
+- Use a large number of iterates, say 10,000.
+
+```{r}
+mcmc.fit <- rwmetrop(beta.geom,
+  list(var=fit$var, scale=2),
+  fit$mode, 10000, y)
+```
+
+#### MCMC Diagnostics
+
+- Is the MCMC sample a reasonable approximation to the
+posterior distribution?
+
+-  Burn-in? How many iterations does it take the chain to
+reach the posterior?
+
+- Good mixing? Is the chain moving well across the posterior?
+
+- Is there significant autocorrelation in the chain?
+
+- How many? How many iterations should be collected?
+
+
+#### Package CODA
+
+- Create a MCMC object from the matrix of simulated draws by
+the mcmc function.
+
+- plot function produces trace plots and density plots of each
+parameter.
+
+- autocorr.plot function produces autocorrelation plots.
+
+- summary function produces summaries and correct standard
+errors for posterior means.
+
+
+#### Load in coda package and create MCMC object
+
+```{r}
+library(coda)
+dimnames(mcmc.fit$par)[[2]] <- c("logit eta","log K")
+sim.draws <- mcmc(mcmc.fit$par)
+```
+
+
+#### Trace and density plots
+
+```{r}
+plot(sim.draws)
+```
+
+#### Autocorrelation plots
+
+```{r}
+autocorr.plot(sim.draws)
+```
+
+#### Summaries of output with correct standard errors
+
+```{r}
+summary(sim.draws)
+```
+
+#### Demonstration that MCMC sample appears to have found posterior.
+
+```{r}
+mycontour(beta.geom, c(-1.1, 0, 1, 9), y)
+points(mcmc.fit$par) 
