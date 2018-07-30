@@ -1,0 +1,178 @@
+---
+title: "Moving to North Carolina"
+output:
+  beamer_presentation: default
+  ioslides_presentation: default
+  slidy_presentation: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      message = FALSE)
+```
+
+
+Moving Story
+=====
+
+- Currently you live in Juneau and you are taking a new job in Raleigh, North Carolina
+
+- Moving in September
+
+- Question:  What's the mean temperature in Raleigh in September?
+
+More formally
+===========
+
+- You will observe daily September temperature measurements in Raleigh $y_1, ..., y_n$
+
+- Assume $y_j$ are a random sample from a normal curve with mean $\mu$ and standard deviation $\sigma$
+
+- Assume we know $\sigma = 10$
+
+- Have some ``prior" beliefs about $\mu$
+
+Construct a prior
+===========
+
+- Make a guess at ``most likely" value of $\mu$ -- say it is 70 degrees (the median)
+
+- Make a statement about the sureness of your guess -- say the 90th percentile is 80 degrees
+
+- Find a normal curve for $\mu$ that matches this information
+
+Using R function
+==========
+
+- Function ```normal.select``` finds the matching normal curve 
+
+```{r}
+library(LearnBayes)
+quantile_1 <- list(x = 65, p = .50)
+quantile_2 <- list(x = 75, p = .90)
+normal.select(quantile_1, quantile_2)
+```
+
+- So my prior is N(65, 7.80)
+
+Likelihood
+===============
+
+- Observe some September temps $y_1, ..., y_n$
+
+- Likelihood is probability of observing these temps viewed as a function of $\mu$
+
+$$
+L(\mu) = \prod_{j=1}^n f_N(y_j | \mu, \sigma) = f_N\left(\bar y|\mu, \frac{\sigma}{\sqrt{n}}\right)
+$$
+
+Posterior
+==========
+
+- Posterior $\propto$ Prior $\times$ Likelihood
+
+- Here
+
+$$
+g(\mu | y) \propto g_N(\mu, 65, 7.8) \times f_N\left(\bar y|\mu, \frac{\sigma}{\sqrt{n}}\right)
+$$
+
+- Conjugate analysis -- prior and posterior are both in normal family
+
+Nice updating formula
+==========
+
+- Precision is the reciprocal of the variance
+
+- Posterior precision is the sum of the prior precision and the data precision
+
+$$
+P_{post} = \frac{1}{7.8^2} + \frac{n}{\sigma^2}
+$$
+- Posterior mean is weighted average of the sample mean and the prior mean where the weights are proportional to the precisions
+
+$$
+\frac{n / \sigma^2}{n / \sigma^2 + 1 / 7.8^2}  \bar y + \frac{1 / 7.8^2}{n / \sigma^2 + 1 / 7.8^2} 65
+$$
+
+Collect some temperatures
+========
+
+- Collect 10 temps, compute $\bar y$ and standard error $\sigma / \sqrt{n}$
+
+```{r}
+library(tidyverse)
+Temp <- read_csv("temps.csv")
+df <- head(select(filter(Temp, Month == 9), Raleigh),
+           10)
+(ybar <- mean(df$Raleigh))
+(se <- 10 / sqrt(10))
+```
+
+Use R function to update 
+=========
+
+```{r}
+library(TeachBayes)
+normal_update(c(65, 7.8), c(71.83, 3.16), teach=TRUE)
+```
+
+- Posterior is N(70.86, 2.92)
+
+Prior, Likelihood, and Posterior
+=======
+
+```{r, fig.height = 5}
+normal_par <- list(c(65, 7.8), c(71.83, 3.16),
+                   c(70.86, 2.93))
+many_normal_plots(normal_par)
+```
+
+Interval estimate
+=======
+
+- A 90% interval estimate is an interval that covers 90% of the posterior 
+
+```{r, fig.height = 5}
+normal_interval(0.9, c(70.9, 2.9))
+```
+
+Is it likely $\mu$ > 75 degrees?
+========
+
+```{r, fig.height = 5}
+normal_area(75, 90, c(70.9, 2.9))
+```
+
+Prediction
+=============
+
+- Want to predict tomorrow's temperature in Raleigh
+
+- Predictive density of $y^*$
+
+$$
+f(y^*) = \int f(y^* | \mu) g(\mu | y) \mu
+$$
+
+- In this normal/normal setting, 
+
+$$
+y^* \sim N(70.9, \sqrt{2.9^2 + 10^2})
+$$
+
+- Construct a 90% prediction interval
+
+Aspects of Bayes in this problem
+============
+
+- Incorporate prior beliefs about average temperature
+
+- Use normal density to model beliefs
+
+- Nice conjugate structure -- normal prior -> normal posterior
+
+- Inferences about mean found by summarizing posterior
+
+- Straightforward to handle prediction
