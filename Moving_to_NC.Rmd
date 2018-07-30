@@ -1,9 +1,6 @@
 ---
 title: "Moving to North Carolina"
-output:
-  beamer_presentation: default
-  ioslides_presentation: default
-  slidy_presentation: default
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
@@ -103,7 +100,7 @@ Collect some temperatures
 
 ```{r}
 library(tidyverse)
-Temp <- read_csv("temps.csv")
+Temp <- read_csv("data/temps.csv")
 df <- head(select(filter(Temp, Month == 9), Raleigh),
            10)
 (ybar <- mean(df$Raleigh))
