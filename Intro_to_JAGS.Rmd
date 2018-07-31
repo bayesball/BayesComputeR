@@ -1,0 +1,125 @@
+---
+title: "Introduction to JAGS"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      message = FALSE)
+```
+
+## JAGS
+
+- General program for MCMC simulation of Bayesian hierarchical models
+
+- Similar to WinBUGS/OpenBUGS, but is platform independent (works on Macs)
+
+- Can be run on the command line or run through R by the rjags package
+
+- Write script defining the Bayesian models
+
+- Many distributions are available
+
+
+## Poisson model
+
+- Assume $y_1, ..., y_n \sim Poisson(\mu)$
+
+- Place a vague prior on $\mu$:
+
+$$
+\log \mu \sim N(0, 10000)
+$$
+
+- Interested in predicting a future observation $y_{new}$
+
+#### Posterior and Predictive Distributions
+
+- Likelihood:
+
+$$
+L(\mu) = \prod_{j=1}^n \frac{\mu^{y_j}\exp(-\mu y_j)}{y_j!}
+$$
+
+- Posterior
+
+$$
+g(\mu | y) \propto L(\mu) g(\mu)
+$$
+
+- Predictive density
+
+$$
+f(y^*) = \int g(\mu | y) f(y^* | \mu) \mu
+$$
+
+#### JAGS model script
+
+```{r}
+modelString = "
+model{
+for (i in 1:N) {
+x[i] ~ dpois(mu)
+}
+log(mu) <- theta
+theta ~ dnorm(0, .0001)
+xnew ~ dpois(mu)
+}
+"
+writeLines(modelString, con="poissonmodel.bug")
+```
+
+#### Create some fake data
+
+- Assume $\mu = 10$ and $n = 100$
+
+```{r}
+set.seed(1234)
+N <- 100
+x <- rpois(N, 10)
+```
+
+#### Set up a model object in JAGS
+
+```{r}
+library('rjags')
+jags <- jags.model('poissonmodel.bug',
+                   data = list('x' = x,
+                               'N' = N),
+                   n.chains = 1,
+                   n.adapt = 100)
+```
+
+
+#### Running JAGS
+
+- Warm up for 1000 iterations
+
+```{r}
+update(jags, 1000)
+```
+
+
+- Takes an additional 5000 iterations, storing outcomes ($\mu$ and $y^*$)
+
+```{r}
+posterior1 <- coda.samples(jags, c("mu", "xnew"),
+                    n.iter=5000, progress.bar="gui")
+```
+
+
+#### Graphs of simulated draws of $\mu$ and $y_{new}$
+
+```{r}
+plot(posterior1)
+```
+
+#### Summaries
+
+```{r}
+summary(posterior1)
+```
+
+
+
