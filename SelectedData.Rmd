@@ -1,0 +1,162 @@
+---
+title: "Selected Data Problem"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      message = FALSE, warnings = FALSE)
+```
+
+## Selected data problem
+
+
+- Interested in measuring the speeds of cars driving on an interstate
+- Assume  speeds are normally distributed with mean $\mu$ and standard deviation $\sigma$
+- Observe 10 cars pass by -- you record the minimum and maximum speeds (say MIN = 52 mph and MAX = 84 mph)
+- What have you learned about the normal parameters?
+
+#### Posterior
+
+- The posterior density of ($\mu, \sigma$) is given by
+
+$$
+g(\mu, \sigma | data) \propto L(\mu, \sigma) g(\mu, \sigma)
+$$
+
+- Likelihood is probability of observing MIN = 52, MAX = 84 in a sample of 10 observations from Normal($\mu, \sigma$)
+
+#### Multinomial likelihood
+
+- Since you know MIN = 52 and MAX = 84, there must be 8 observations between 52 and 84
+
+- Determine multinomial probs by normal curve
+
+```{r, echo = FALSE, fig.height = 5.5}
+library(ggplot2)
+ggplot(data.frame(x=c(30, 100)), aes(x)) +
+    stat_function(fun=dnorm, geom="line",
+                  color="red", size=2.5,
+                  args=list(mean=60,
+                            sd=7)) +
+    geom_vline(xintercept = c(52, 84), size = 2) +
+    annotate(geom="text", x=70, y = 0.04,  
+             label="8", size = 12)
+```
+
+#### Likelihood and prior
+
+$$
+L(\mu, \sigma) = \phi(52; \mu, \sigma) \phi(84; \mu, \sigma) \left(\Phi(84, \mu, \sigma) - \Phi(52, \mu, \sigma)\right)^8
+$$
+
+Use noninformative prior
+
+$$
+g(\mu, \sigma) = \frac{1}{\sigma}
+$$
+
+#### Function defining the log posterior of $\theta = (\mu, \log \sigma)$
+
+```{r}
+minmaxpost <- function(theta, data){
+  mu <- theta[1]
+  sigma <- exp(theta[2])
+  dnorm(data$min, mu, sigma, log=TRUE) +
+    dnorm(data$max, mu, sigma, log=TRUE) +
+    (data$n - 2) * log(pnorm(data$max, mu, sigma) -
+    pnorm(data$min, mu, sigma))
+}
+```
+
+#### Read in the data and load the package
+
+```{r}
+library(LearnBayes)
+data <- list(n=10, min=52, max=84)
+```
+
+#### Obtain normal approximation
+
+```{r}
+fit <- laplace(minmaxpost, c(70, 2), data)
+fit$mode
+fit$var
+```
+
+#### Show exact posterior and normal approximation
+
+```{r, fig.height = 5}
+mycontour(minmaxpost, c(45, 95, 1.5, 4), data)
+mycontour(lbinorm, c(45, 95, 1.5, 4),
+          list(m=fit$mode, v=fit$var), 
+          add=TRUE, col="red")
+```
+
+#### Random walk Metropolis
+
+Inputs are (1) function defining log posterior, (2) list of approx to var-cov matrix and scale parameter, (3) starting value, (4) number of iterations, and (4) data
+
+```{r}
+mcmc.fit <-  rwmetrop(minmaxpost, 
+             list(var=fit$v, scale=3), 
+             c(70, 2), 
+             10000, 
+             data)
+```
+
+#### Outputs a matrix of simulated draws
+
+```{r}
+head(mcmc.fit$par)
+```
+
+#### Acceptance rate?
+
+```{r}
+mcmc.fit$accept
+```
+
+#### Show simulated draws on top of contour plot 
+
+```{r, fig.height = 5}
+mycontour(minmaxpost, c(45, 95, 1.5, 4), data,
+          xlab=expression(mu), 
+          ylab=expression(paste("log ",sigma)))
+points(mcmc.fit$par)
+```
+
+#### Learning about the 75th percentile of normal curve
+
+- Have simulated draws from the posterior of $(\mu, \log \sigma)$
+
+- Can obtain simulated draws of the posterior for any function $h(\mu, \sigma)$
+
+- For example, suppose we want to learn about 75th percentile of normal curve
+
+$$
+h(\mu, \sigma) = \mu + 0.674 \sigma
+$$
+
+#### Posterior of the 75th percentile
+
+```{r, fig.height = 5}
+mu <- mcmc.fit$par[, 1]
+sigma <- exp(mcmc.fit$par[, 2])
+P.75 <- mu + 0.674 * sigma
+plot(density(P.75), 
+     main="Posterior Density of Upper Quartile")
+```
+
+#### Prediction problem
+
+- Suppose the speed limit is 75 mph
+
+- 100 cars travel in the next hour
+
+- Predict the number that will be speeding
+
+- Interested in predictive density
+$$
+f(y_1^*, ..., y_{100}^* | y) = \int f(y^*| \mu, \sigma) g(\mu, \sigma | y) d\mu d\sigma
+$$
