@@ -1,0 +1,218 @@
+---
+title: "Regression"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      message = FALSE, warnings = FALSE)
+```
+
+## Birthweight regression study
+
+-- Data:  collect gestational age, gender, and birthweight from 24 babies
+
+-- Data loaded from LearnBayes package
+
+-- Interested in relationship between gestational age and birthweight
+
+-- Want to predict birthweight given particular values of gestational age
+
+## Load data
+
+```{r}
+library(LearnBayes)
+head(birthweight)
+```
+
+## Regression model
+
+-- (Sampling) Heights $y_1, ..., y_n$ are independent
+
+-- $y_j \sim N(\beta_0 + \beta_1 x_j, \sigma)$
+
+-- (Prior) $(\beta_0, \beta_1, \sigma) \sim g()$
+
+-- Think of weakly informative choice for $g$
+
+
+## Standardizing covariate and response
+
+-- Helpful to standardize both response and covariate
+
+$y^*_j = \frac{y_j - \bar y} {s_y}, x^*_j = \frac{x_j - \bar x} {s_x}$
+
+-- Helps in thinking about prior and interpretion
+
+-- mean $E(y^*_j) = \beta_0 + \beta_1 x^*_j$
+
+## Choosing a prior
+
+-- What information would one have about regression?
+
+-- $\beta_0$ will be close to 0 
+
+-- $\beta_1$ represents correlation between covariate and response
+
+-- certainly think $\beta_1 > 0$
+
+## Using LearnBayes package
+
+-- Write a function to compute the logarithm of the posterior
+
+-- Arguments are parameter vector
+
+$\theta = (\beta_0, \beta_1, \log \sigma)$ and data (data frame with variables `s_age` and `s_weight`)
+
+## Expression for posterior
+
+- Likelihood is
+$$
+L(\beta_0, \beta_1, \sigma) = \prod f_N(y_j; \beta_0 + \beta_1 x_j, \sigma)
+$$
+- Posterior is proportional to
+$$
+L(\beta_0, \beta_1, \sigma) g(\beta_0, \beta_1, \sigma)
+$$
+where $g()$ is my prior
+
+## Write function to compute log posterior
+
+-- Here my prior on $(\beta_0, \beta_1, \log \sigma)$ is uniform (why?)
+
+```{r}
+birthweight$s_age <- scale(birthweight$age)
+birthweight$s_weight <- scale(birthweight$weight)
+logpost <- function(theta, data){
+  a <- theta[1]
+  b <- theta[2]
+  sigma <- exp(theta[3])
+  sum(dnorm(data$s_weight, 
+            mean = a + b * data$s_age, 
+                         sd = sigma, log=TRUE))
+}
+```
+
+## Obtaining the posterior mode (LearnBayes)
+
+-- The `laplace` function in `LearnBayes` finds the posterior mode
+
+-- Inputs are `logpost`, starting guess at mode, and data
+
+```{r}
+laplace(logpost, c(0, 0, 0), birthweight)$mode
+```
+
+## Using rethinking package
+
+-- Write description of model by a short script 
+
+```{r}
+library(rethinking)
+
+flist <- alist(
+  s_weight ~ dnorm( mu, sigma ) ,
+  mu <- a + b * s_age ,
+  a ~ dnorm( 0, 10) ,
+  b ~ dnorm(0, 10) ,
+  sigma ~ dunif( 0, 20)
+)
+```
+
+## Find the normal approximation to posterior
+
+-- `map` function in `rethinking` package
+
+-- `precis` function finds the posterior means, standard deviations, and quantiles
+
+```{r}
+m3 <- rethinking::map(flist, data=birthweight)
+precis(m3)
+```
+
+## Extract simulated draws from normal approximation
+
+-- `map` function in `rethinking` package
+
+```{r}
+post <- extract.samples(m3)
+head(post)
+```
+
+## Show 10 simulated fits of $(\beta_0, \beta_1)$
+
+```{r, fig.width=4, fig.height=2.5}
+library(ggplot2)
+ggplot(birthweight, aes(s_age, s_weight)) +
+  geom_point() +
+  geom_abline(data=post[1:10, ], 
+              aes(intercept=a, slope=b))
+```
+
+## Posterior of E(y)
+
+-- Suppose you want the posterior for expected response for a specific covariate value
+
+-- Posterior of $h(\beta) = \beta_0 + \beta_1 s_{age}$ for specific value of `s_age`
+
+-- Just compute this function for each simulated vector from the posterior
+
+```{r, fig.width=4, fig.height=2.5}
+s_age <- 1
+mean_response <- post[, "a"] + s_age * post[, "b"]
+ggplot(data.frame(mean_response), aes(mean_response)) +
+  geom_histogram(aes(y=..density..)) +
+  geom_density(color="red")
+```
+
+## Prediction
+
+-- Interested in learning about future weight of babies of particular gestational age
+
+-- Relevant distribution $f(y_{new} | y)$
+
+-- Simulate by (1) simulating values of $\beta_0, \beta_1, \sigma$ from posterior and (2) simulating value of $y_{new}$ from (normal) sampling model
+
+-- In `rethinking` package, use function `sim`
+
+## Illustrate prediction 
+
+- Define a data frame of values of `s_age`
+
+- Use `sim` function with inputs model fit and data frame
+
+```{r}
+data_new <- data.frame(s_age = c(-1, 0, 1))
+pred <- sim(m3, data_new)
+```
+
+## Prediction intervals
+
+- Output of `sim` is matrix of simulated predictions, each column corresponds to one covariate value
+
+- Summarize this matrix using `apply` and `quantile` to obtain 80% prediction intervals
+
+```{r}
+apply(pred, 2, quantile, c(.1, .9))
+```
+
+## Exercises
+
+Suppose you collect the weight and mileage for a group of 2016 model cars.
+
+Interested in fitting the model
+$$
+y_i \sim N(\beta_0 + \beta_1 x_i, \sigma)
+$$
+where $x_i$ and $y_i$ are standardized weights and mileages
+
+1.  Construct a reasonable weakly informative prior on $(\beta_0, \beta_1, \sigma)$
+
+2.  Suppose you are concerned that your prior is too informative in that the posterior is heavily influenced by the prior. What could you try to address this concern?
+
+3.  Describe a general strategy for simulating from the posterior of all parameters
+
+4.  Suppose one is interested in two problems: (P1) estimating the mean mileage of cars of average weight and (P2) learning about the actual mileage of a car of average weight.  What are the relevant distributions for addressing problems (P1) and (P2)?
+
+5.  For some reason, suppose you are interested in obtaining a 90% interval estimate for the standardized slope $\beta_1 / \sigma$.  How would you do this based on simulating a sample from the joing posterior?
+

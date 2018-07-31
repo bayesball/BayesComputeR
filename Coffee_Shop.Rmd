@@ -1,0 +1,305 @@
+---
+title: "Coffee Shops"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, 
+                      message = FALSE, warnings = FALSE)
+```
+
+## Statistical Rethinking
+
+-- *Statistical Rethinking: A Bayesian Course with Examples in R and Stan* by Richard McElreath
+
+-- Nice introduction to Bayesian ideas
+
+-- Associated R package (rethinking) that provides interface to Stan software
+
+-- Use a "coffee shop" illustration of multilevel modeling
+
+## How Long Do You Wait at a Coffee Shop?
+
+-- One is interested in learning about the pattern of waiting times at a particular coffee shop.
+
+-- Suppose the waiting time $y$ is normally distributed
+
+-- You believe waiting times are different between the morning the afternoon
+
+-- Motivates the model 
+$$
+y \sim N(\alpha + \beta * PM, \sigma)
+$$
+
+-- Given a sample of waiting times \{$y_i$\} can fit model
+
+## Several Coffee Shops
+
+-- Visit several coffee shops
+
+-- Observe waiting times for each shop
+
+-- For the $j$th coffee shop, have model
+$$
+y \sim N(\alpha_j + \beta_j * PM, \sigma)
+$$
+
+## How to Estimate Regressions for $J$ Coffee Shops?
+
+-- Separate estimates? (What if you don't have many measurements at one coffee shop?)
+
+-- Combined estimates? (Assume that waitings times from the $J$ shops satisfy the same linear model.)
+
+-- Estimate by multilevel model (compromise between separate estimates and combined estimates)
+
+## Varying-Intercepts, Varying Slopes Model
+
+- Sampling: 
+
+$$y_i \sim N(\alpha_{j[i]} + \beta_{j[i]} PM_i, \sigma)$$
+
+- Prior:
+
+Stage 1.  $(\alpha_j, \beta_j) \sim N((\mu_\alpha, \mu_\beta), \Sigma)$
+
+where 
+$$
+\Sigma = \left( \begin{array}{cc}
+\sigma^2_\alpha & \rho \sigma_\alpha \sigma_\beta \\
+\rho \sigma_\alpha \sigma_\beta & \sigma^2_\beta \\
+ \end{array} \right)
+$$
+
+Stage 2.  $(\mu_\alpha, \mu_\beta, \sigma_\alpha, \sigma_\beta, \rho)$ assigned weakly informative prior $g()$
+
+## Fake Data Simulation
+
+- Simulate waiting times from the two-stage multilevel model
+
+(1) Fix values of 2nd-stage prior parameters
+
+(2) Simulate (true) regression coefficients for the $J$ shops
+
+(3) Simulate waiting times from the regression models
+
+- Fit model to simulated data 
+
+- The parameter estimates should be close to the values of the parameters in the simulated data
+
+## Simulating 2nd Stage Parameters
+
+We set up the second-stage parameters for the coffee shop example.  The average waiting time across all shops is $\mu_a = 3.5$ minutes and the afternoon wait time tends to be one minute shorter, so $\mu_b = -1$.  The intercepts vary according to $\sigma_a = 1$ and the slopes vary by $\sigma_b = 0.5$.  The true correlation between the population intercepts and slopes is $\rho = -.7$.
+
+```{r, echo=TRUE}
+a <- 3.5            # average morning wait time
+b <- (-1)           # average difference afternoon wait time
+sigma_a <- 1        # std dev in intercepts
+sigma_b <- 0.5      # std dev in slopes
+rho <- (-0.7)       # correlation between intercepts and slopes
+```
+
+## Setting up 2nd Stage Multivariate Distribution
+
+Sets up the parameters for the multivariate distribution for the coffeeshop-specific parameters $(\alpha_j, \beta_j)$.
+
+```{r, echo=TRUE}
+Mu <- c( a , b )
+cov_ab <- sigma_a * sigma_b * rho
+Sigma <- matrix( c(sigma_a^2, cov_ab, cov_ab, sigma_b^2), 
+                 ncol=2 )
+```
+
+## Simulate Varying Effects
+
+Simulate the varying effects for the coffee shops.
+
+```{r, echo=TRUE}
+N_cafes <- 20
+library(MASS)
+set.seed(5) # used to replicate example
+vary_effects <- mvrnorm( N_cafes , Mu , Sigma )
+a_cafe <- vary_effects[, 1]
+b_cafe <- vary_effects[, 2]
+```
+
+## Simulate Observed Waiting Times
+
+Simulate the actual waiting times (we are assuming that the sampling standard deviation is $\sigma_y = 0.5$).
+
+```{r, echo=TRUE}
+N_cafes <- 20
+N_visits <- 10
+afternoon <- rep(0:1, N_visits * N_cafes / 2)
+cafe_id <- rep( 1:N_cafes , each=N_visits )
+mu <- a_cafe[cafe_id] + b_cafe[cafe_id] * afternoon
+sigma <- 0.5  # std dev within cafes
+wait <- rnorm( N_visits * N_cafes , mu , sigma )
+d <- data.frame( cafe=cafe_id , 
+                 afternoon=afternoon , wait=wait )
+```
+
+
+## Simulated Data
+
+```{r}
+library(ggplot2)
+d0 <- data.frame(cafe=rep(1:20, 2),
+                 afternoon=c(rep(0, 20), rep(1, 20)),
+                 wait=c(a_cafe, a_cafe + b_cafe))
+d0$Cafe <- paste("Cafe", d0$cafe)
+d$Cafe <- paste("Cafe", d$cafe)
+ggplot(d0, aes(afternoon, wait)) + geom_line() +
+  facet_wrap(~ Cafe, ncol=4) +
+  geom_point(data=d, aes(afternoon, wait), color="red") +
+  ggtitle("Plot of Simulated Data from Varying Slopes/Varying Intercepts Model")
+```
+
+
+## Using STAN
+
+- Write a Stan script defining the model (similar to a
+JAGS model script)
+
+- Bring your data into R, define all data used in
+model description
+
+- Use the function stan from the rstan package to
+fit the model using Stan 
+
+- Even easier using the rethinking package
+
+- Extract samples and summarize/plot using the coda
+package
+
+## Using STAN to fit the model
+
+Okay, we are ready to use STAN to fit the model to the simulated data.
+
+```{r, echo=TRUE}
+library(rethinking)
+m13.1 <- map2stan(
+  alist(
+    wait ~ dnorm( mu , sigma ),
+    mu <- a_cafe[cafe] + b_cafe[cafe] * afternoon,
+    c(a_cafe, b_cafe)[cafe] ~ dmvnorm2(c(a, b), sigma_cafe, Rho),
+    a ~ dnorm(0, 10),
+    b ~ dnorm(0, 10),
+    sigma_cafe ~ dcauchy(0, 2),
+    sigma ~ dcauchy(0, 2),
+    Rho ~ dlkjcorr(2)
+  ) ,
+  data=d ,
+  iter=5000 , warmup=2000 , chains=2 )
+```
+
+## Posterior Summaries
+
+Extract simulated values by the ``extract.samples`` function.  Note that post is a list where each component is a matrix of simulated draws of different parameters.  For example, `sigma_cafe` is a matrix with 6000 rows and two columns where the columns correspond to $\sigma_a$ and $\sigma_b$.
+
+```{r}
+post <- extract.samples(m13.1)
+names(post)
+```
+
+## Summary of Posterior of Random Effects ($\sigma, \sigma_a, \sigma_b)$
+
+```{r}
+library(coda)
+plot(mcmc(cbind(post$sigma, post$sigma_cafe)))
+```
+
+## Summary of Posterior of Random Effects ($\sigma, \sigma_a, \sigma_b)$
+
+```{r}
+library(coda)
+summary(mcmc(cbind(post$sigma, post$sigma_cafe)))
+```
+
+## Check
+
+- In our simulation of the fake data, we assumed
+$$
+\sigma = 0.5, \sigma_a = 1, \sigma_b = 0.5
+$$
+
+- Posterior estimates of these parameters are close to these values
+
+- Gives some reassurance that the MCMC algorithm is programmed correctly
+
+## Questions: Waiting Times at a Coffee Shop
+
+Suppose one focuses on the morning waiting times of the $J$ coffee shops.  One considers the ``varying intercepts" model
+
+$$
+y_i \sim N(\mu_{j[i]}, \sigma^2), i = 1, ..., N
+$$
+
+where the intercepts $\mu_1, ..., \mu_J$ follow the multilevel model
+
+- $\mu_1, ..., \mu_J \sim N(\theta, \tau^2)$
+- $(\theta, \tau^2) \sim g(\theta, \tau^2)$ = 1
+
+(We assume the sample standard deviation $\sigma$ is known.)
+
+1.  First simulate data from this model.  Assume that $\theta = 5, \tau = 1$, there are $J = 20$ coffee shops, and you will have a sample of $n = 5$ waiting times for each shop (so $N = 100$).  Assume that the sampling standard deviation is $\sigma = .75$.
+
+2.  Explore the following computation strategies to estimate the second-stage parameters $\theta$ and $\tau^2$.
+
+
+## Questions: Strategy One (LearnBayes)
+
+Let $\bar y_j$ denote the sample mean of the $j$th group.  One can show that the marginal posterior distribution of $(\theta, \log \tau^2)$ is given by
+$$
+g(\theta, \log \tau^2) \propto \prod_{j=1}^J 
+\phi\left(\bar y_j, \theta, \frac{\sigma^2}{n} + \tau^2\right) \tau^2
+$$
+
+Here's a function to compute the log posterior:
+
+```{r, echo=TRUE}
+logpost <- function(theta_vector, data){
+   theta <- theta_vector[1]
+   tausq <- exp(theta_vector[2])
+   ybar <- data[, 1]
+   sigmasq <- data[, 2]
+   sum(dnorm(ybar, theta, sqrt(sigmasq + tausq), 
+             log=TRUE)) + log(tausq)
+}
+```
+
+## Questions: Strategy One (LearnBayes)
+
+- Use the function laplace in the LearnBayes package to find the posterior mean and standard deviation of $\theta$ and $\log \tau^2$.
+
+- Take a sample of size 1000 from the posterior distribution of $(\theta, \log \tau^2)$
+
+- Use the simulated sample to find 90 percent interval estimates for $\theta$ and $\tau$.
+
+## Questions: Strategy Two (JAGS)
+
+The following JAGS script defines the varying intercepts model.  The variable prec.y is the reciprocal of the sampling variance of $\bar y_j$ and prec.mu is the reciprocal of $\tau^2$.
+
+```{r, echo=TRUE}
+modelString = "
+model {
+for (i in 1:J){
+y[i] ~ dnorm (mu[i], prec.y)
+mu[i] ~ dnorm(theta, prec.mu)
+}
+prec.mu <- pow(tau2, -1)
+tau2 ~ dunif(0, 100)
+theta ~ dunif(0, 100)
+}"
+writeLines(modelString, con="normexch.bug")
+```
+
+## Questions: Strategy Two (JAGS)
+
+- Use JAGS and this model script to simulate 5000 values from the posterior distribution, collecting values of $\theta$ and $\tau^2$.
+
+- Construct trace plots of the simulated draws of $\theta$ and $\tau^2$ to check convergence of the MCMC chain.
+
+- Use the simulated draws to find 90 percent interval estimates for $\theta$ and $\tau$.
+
+- Compare your results with the results from Strategy One.
+

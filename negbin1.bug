@@ -1,0 +1,11 @@
+
+model{
+for(i in 1:n){
+mu[i] <- beta[1] +  beta[2] * year[i] 
+lambda[i] <- exp(mu[i])
+p[i] <- r / (r + lambda[i])
+y[i] ~ dnegbin(p[i], r)
+}	
+beta[1:2] ~ dmnorm(b0[1:2], B0[ , ])
+r ~ dunif(0, 200)
+}

@@ -1,0 +1,10 @@
+
+model {
+for (i in 1:J){
+y[i] ~ dnorm (mu[i], prec.y)
+mu[i] ~ dnorm(theta, prec.mu)
+}
+prec.mu <- pow(tau2, -1)
+tau2 ~ dunif(0, 100)
+theta ~ dunif(0, 100)
+}

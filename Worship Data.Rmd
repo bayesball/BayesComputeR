@@ -1,0 +1,268 @@
+---
+title: "Worship Data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+        message = FALSE, warnings = FALSE)
+```
+
+## Worship Data Example
+
+-- Collect weekly attendance data from a local church for many years
+
+-- Interested in understanding pattern of growth and predict future attendance
+
+## Read the data
+
+```{r, fig.height=3, fig.width=5}
+d <- read.csv("data/gateway.csv")
+library(tidyverse)
+ggplot(d, aes(Year, Count)) + geom_jitter()
+```
+
+## Remove the outliers (Easter, etc)
+
+```{r, excho=FALSE}
+S <- summarize(group_by(d, Year),
+               M=median(Count),
+               QL=quantile(Count, .25),
+               QU=quantile(Count, .75),
+               Step=1.5 * (QU - QL),
+               Fence_Lo= QL - Step,
+               Fence_Hi= QU + Step)
+d <- inner_join(d, S)
+d2 <- filter(d, Count > Fence_Lo, Count < Fence_Hi)
+```
+
+## New plot with outliers removed
+
+```{r, fig.height=4, fit.width=5}
+ggplot(d2, aes(Year, Count)) + 
+  geom_jitter() 
+```
+
+## Bayesian model:
+
+1.  Worship counts $y$ are Poisson($\lambda$) where means satisfy log-linear model
+$$
+\log \lambda = a + b \times year
+$$
+2.  Place weakly-informative prior on $(a, b)$
+$$
+a \sim N(0, 100), b \sim N(0, 100)
+$$
+
+## Define a new variable
+
+-- `year_number` is number of years after 2002
+
+```{r}
+d2$year_number <- d2$Year - 2002
+```
+
+## Normal approximation to posterior
+
+-- Use `rethinking` package
+
+-- define this Bayesian model and find a normal approximation to the posterior.
+
+```{r}
+library(rethinking)
+m1 <- map(
+  alist(
+    Count ~ dpois( lambda ),
+    log(lambda) <- a + b * year_number,
+    a ~ dnorm(0, 100),
+    b ~ dnorm(0, 100)
+  ), data=d2, start=list(a=6, b=0.1)
+)
+```
+
+## Simulate and plot 1000 draws from the posterior
+
+```{r, fig.height=3, fig.width=5}
+sim_m1 <- extract.samples(m1, n = 1000)
+ggplot(sim_m1, aes(a, b)) + geom_point()
+```
+
+## Posterior summaries of each parameter
+
+```{r}
+precis(m1, digits=4)
+```
+
+## Summarizing worship growth
+
+-- For a particular year number, interested in posterior
+distribution of expected count:
+
+$$
+E(Y) = \exp(a + b \, \, year)
+$$
+-- Wish to summarize the posterior of $E(y)$ for several values of year
+
+-- Summarize simulated draws of $\exp(a + b \, \, year)$
+
+## Posterior of expected worship count for each year
+
+```{r}
+post_lambda <- function(year_no){
+  lp <- sim_m1[, "a"] + year_no * sim_m1[, "b"]
+  Q <- quantile(exp(lp), c(0.05, 0.95))
+  data.frame(Year = year_no, L_05 = Q[1], L_95 = Q[2])
+}
+```
+
+## Graph the summaries of expected count
+
+```{r}
+OUT <- do.call("rbind", 
+               lapply(0:10, post_lambda))
+```
+```{r, fig.width=4, fig.height=2}
+ggplot(OUT, aes(Year, L_05)) +
+  geom_line() +
+  geom_line(data=OUT, aes(Year, L_95)) +
+  ylab("Expected Count")
+```
+
+## Model checking
+
+- Idea:  Does the observed data resemble "replicated data" predicted from the model?
+
+- Simulate data from the model (posterior predictive distribution)
+
+- Use some checking function $T(y_{rep})$ (here we use the standard deviation as our function)
+
+- Plot predictive distribution of $T(y_{rep})$ -- how does $T(y_{obs})$ compare?
+
+## Posterior predictive checking 
+
+- Simulate vector of $\lambda_j$ and then values of $y$
+
+- Compute standard deviation of each sample
+
+```{r}
+replicated_data <- function(j){
+  lambda <- sim_m1[j, "a"] + sim_m1[j, "b"] * 
+         d2$year_number
+  ys <- rpois(length(lambda), exp(lambda))
+  sd(ys)
+}
+pred_SD <- map_dbl(1:1000, replicated_data)
+```
+
+## Compare observed SD with predictive distribution.
+
+What do we conclude?
+
+```{r, fig.height=3, fig.width=5}
+ggplot(data.frame(pred_SD), aes(pred_SD)) +
+  geom_histogram() +
+  geom_vline(xintercept = sd(d2$Count))
+```
+
+## Different Sampling Model
+
+-- Data is overdispersed
+
+-- Use another count distribution that can accomodate the extra-variation
+
+-- Try a negative-binomial($p, r$)
+
+-- Parametrize in terms of the mean $\lambda$ and a overdispersion parameter
+
+## Negative binomial regression
+
+-- count response $y \sim NB(p, r)$
+
+-- mean $\mu = \frac{(1- p) r}{p}$
+
+-- variance $\mu  + \mu ^ 2 / r$ 
+
+($r$ is overdispersion parameter)
+
+-- log-linear model $\log \mu = a + b year$
+
+-- prior on $(a, b, r)$
+
+
+## Use JAGS
+
+-- Write a script defining the Bayesian model
+
+-- Vague priors on $\beta$ and overdispersion parameter $r$
+
+-- Inputs to JAGS are (1) model script, (2) data, (3) initial values for MCMC sampling
+
+## Use JAGS to fit a negative binomial model.
+
+```{r}
+modelString = "
+model{
+for(i in 1:n){
+mu[i] <- beta[1] +  beta[2] * year[i] 
+lambda[i] <- exp(mu[i])
+p[i] <- r / (r + lambda[i])
+y[i] ~ dnegbin(p[i], r)
+}	
+beta[1:2] ~ dmnorm(b0[1:2], B0[ , ])
+r ~ dunif(0, 200)
+}"
+writeLines(modelString, con="negbin1.bug")
+```
+
+## JAGS Inputs 
+
+```{r}
+forJags <- list(n=dim(d2)[1],  
+                year = d2$year_number,
+                y = d$Count,    
+                b0 = rep(0, 2),        
+                B0 = diag(.0001, 2))
+```
+
+```{r}
+inits <- list(list(beta=rep(0, 2),
+                   r=1))
+```
+
+## Running JAGS (MCMC Warmup)
+
+```{r}
+require(rjags)
+foo <- jags.model(file="negbin1.bug",
+                  data=forJags,
+                  inits=inits,
+                  n.adapt = 5000)
+```
+
+## Running JAGS (More warmup and collect draws)
+
+```{r}
+update(foo,5000)
+out <- coda.samples(foo,
+                    variable.names=c("beta", "r"),
+                    n.iter=5000)
+```
+
+## Some Posterior Summarizes
+
+```{r}
+summary(out)
+```
+
+## Exercises
+
+1.  How do the Poisson and Negative-Binomial Fits compare?
+
+2.  Suppose we want to predict a single worship attendance next year?  How would we do this?
+
+3.  For Negative-Binomial fit, what type of posterior predictive checks should we try?
+
+4.  How would Negative-Binomial fit differ from a frequentist fit?
+
+5.  What are other covariates we could use to help explain variation in worship attendance?
+

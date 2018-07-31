@@ -1,0 +1,208 @@
+---
+title: "Home Runs"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      message = FALSE, warnings = FALSE)
+```
+## Home Run Study
+
+-- Interested in learning about home run rates of
+baseball players
+
+-- Collect data for part of the 2017 season
+
+## Read in Baseball Data 
+
+-- From Fangraphs, read in batting data for players with at least 10 plate appearances
+
+-- Filter to only include batters with at least 50 PA
+
+```{r}
+library(tidyverse)
+d2017 <- filter(read_csv("data/may13.csv"), PA >= 50)
+```
+
+## Graph Home Run Rates Against Plate Appearances
+
+```{r}
+ggplot(d2017, aes(PA, HR / PA)) + geom_point()
+```
+
+## Basic Sampling Model
+
+-- Home run count $y_j$ is Poisson($PA_j \lambda_j$) for 
+323 hitters
+
+-- Want to estimate $\lambda_1, ..., \lambda_{323}$
+
+## No-Pool Model
+
+-- No relationship between the rates
+
+-- Estimate $\lambda_j$ using the individual counts
+
+-- $\hat \lambda_j = y_j / PA_j$
+
+## Pooled Model
+
+-- Assume that $\lambda_1 = ... = \lambda_{323}$
+
+-- Estimate common rate by pooling the data
+
+-- $\hat \lambda_j = \sum y_j / \sum PA_j$
+
+## Both Models are Unsatisfactory
+
+-- Individual count estimates can be poor, especially with  small sample sizes and sparse data
+
+-- Pooled estimates ignore the differences between the true rates $\lambda_1, ..., \lambda_{323}$
+
+-- Need a compromise model
+
+## Partial Pooling Model
+
+-- multilevel model
+
+-- assume that the $\lambda_j$ have a common prior $g()$ with unknown parameters $\theta$
+
+-- place a weakly-informative prior on $\theta$
+
+-- estimate parameters from the data
+
+## Express as Poisson log-linear Models
+
+-- $y_j \sim Poisson(\lambda_j)$
+
+-- $\log \lambda_j = \log PA_j + \beta_0 + \gamma_j$
+
+-- Here $\log PA_j$ is an offset.
+
+
+## Fit the No-Pool Model
+
+- Use `glm` with `Player` as a covariate
+
+- Remember estimates are on log scale -- exponentiate to get estimates at $\lambda_j$
+
+```{r}
+fit_individual <- glm(HR ~ Player + offset(log(PA)),
+                      family=poisson,
+                      data=d2017)
+d2017$rate_estimates <- exp(fit_individual$linear.predictors) /
+                      d2017$PA
+```
+
+## Fit the Pooled Model using glm
+
+- Use `glm` with only a constant term
+
+```{r}
+fit_pool <- glm(HR ~ 1 + offset(log(PA)),
+                family=poisson,
+                data=d2017)
+exp(coef(fit_pool)) 
+```
+
+## Partial Pooling Model
+
+-- $y_j \sim Poisson(\lambda_j)$
+
+-- $\log \lambda_j = \log PA_j + \beta_0 + \gamma_j$
+
+-- $\gamma_1, ..., \gamma_N \sim N(0, \sigma)$
+
+## Quick Fit of Partial Pooling Model
+
+```{r}
+library(lme4)
+fit_pp <- glmer(HR ~ (1 | Player) + 
+              offset(log(PA)),
+                family=poisson,
+                data=d2017)
+```
+
+## Quick Fit of Partial Pooling Model
+
+```{r}
+fit_pp
+```
+
+## Use STAN to Fit the Partial Pool Model
+
+```{r}
+library(rstanarm)
+fit_partialpool <- stan_glmer(HR ~ (1 | Player) + 
+                                offset(log(PA)),
+                              family=poisson,
+                              data=d2017)
+```
+
+## Priors?
+
+```{r}
+prior_summary(fit_partialpool)
+```
+
+## Learn about random effects standard deviation
+
+```{r, fig.height=4}
+posterior <- as.matrix(fit_partialpool)
+ggplot(data.frame(Sigma=sqrt(posterior[, 325])), 
+       aes(Sigma)) +
+      geom_density()
+```
+
+## Obtain Rate Estimates
+
+```{r, echo=FALSE}
+shift_draws <- function(draws) {
+  exp(sweep(draws[, -c(1, 325)], MARGIN = 1, 
+        STATS = draws[, 1], 
+        FUN = "+"))
+}
+Sim_Rates <- shift_draws(as.matrix(fit_partialpool))
+Post_medians <- apply(Sim_Rates, 2, median)
+d_estimates <- data.frame(PA = exp(fit_partialpool$offset),
+                          Estimate = Post_medians,
+                          Type="Partial Pool")
+Estimates <- data.frame(PA = d2017$PA,
+                        Estimate = d2017$rate_estimates,
+                        Type="Individual")
+```
+
+```{r, echo=FALSE}
+ggplot(rbind(d_estimates, Estimates), 
+       aes(PA, Estimate, color=Type)) + geom_point() +
+  geom_smooth(se=FALSE)
+```
+
+## Exercises
+
+Efron and Morris (1975) demonstrated multilevel modeling using baseball data for 18 players after 45 at-bats.  The data is contained  in the dataset `bball1970` in the `rstanarm` package.  Suppose $p_1, ..., p_{18}$ represent the probabilities of success for these 18 players.
+
+1.  Describe the "no-pooling" model for this example.
+
+2.  Describe the "pooling" model for this example.
+
+3.  What is the intent of a "partial pooling" model for this example?
+
+4.  Here is a multilevel model for this baseball data
+
+$\log(p_j / (1 - p_j)) = \beta_0 + \gamma_j$
+
+$\gamma_j \sim N(0, \sigma)$
+
+Try out the basic fit of this model using the `lme4` package.
+
+```{r}
+library(lme4)
+library(rstanarm)
+fit <- glmer(cbind(Hits, AB - Hits) ~ (1 | Player),
+      family=binomial, data=bball1970)
+```
+
+Contrast this fit with the corresponding Bayesian fit using the `stan_glmer` function.
+   

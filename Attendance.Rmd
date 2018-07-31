@@ -1,0 +1,206 @@
+---
+title: "Attendance Data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      message = FALSE, warnings = FALSE)
+```
+
+## Attendance study
+
+-- collected Cleveland Indians (baseball) attendance for 81 home games in 2016 season
+
+-- response is fraction of capacity
+
+-- input:  game is Weekend/Weekday
+
+-- input:  period of season (first, second, third)
+
+```{r}
+library(readr)
+d <- read_csv("data/tribe2016.csv")
+```
+
+## Beta regression model 
+
+-- Suitable for modeling response data which are rates or proportions
+
+-- $y_i \sim Beta$ with shape parameters $a$ and $b$
+
+-- $a = \mu \phi, \, \, b = (1 - \mu) \phi$
+
+($\mu$ is the mean, $\phi$ is a precision parameter)
+
+-- $logit \mu = \alpha + x \beta$
+
+(logistic model on the means)
+
+## Traditional beta regression
+
+- using function `betareg` in `betareg` package
+
+```{r}
+library(betareg)
+fit <- betareg(fraction ~ Weekend + Period, data=d,
+               link="logit")
+```
+
+## Output from betareg
+
+```{r}
+summary(fit)
+```
+
+## Using STAN in rstanarm package
+
+- Function `stan_betareg` implements MCMC sampling of a Bayesian beta regression model
+
+- Same model syntax as `betareg`
+
+- Can specify a variety of priors (we'll use default one here)
+
+```{r}
+library(rstanarm)
+fit2 <- stan_betareg(fraction ~ Weekend + Period, data=d,
+                     link="logit")
+```
+
+## What priors are used?
+
+```{r}
+prior_summary(fit2)
+```
+
+
+## MCMC diagnostics -- trace plots
+
+```{r}
+library(bayesplot)
+mcmc_trace(as.matrix(fit2))
+```
+
+## Autocorrelation plots
+
+```{r}
+mcmc_acf(as.matrix(fit2))
+```
+
+## Density plots for all parameters
+
+```{r}
+mcmc_dens(as.matrix(fit2))
+```
+
+## Posterior interval estimates
+
+```{r}
+posterior_interval(fit2)
+```
+
+## Matrix of simulated draws from posterior
+
+```{r}
+posterior_sims <- as.matrix(fit2)
+head(posterior_sims)
+```
+
+## Interested in expected attendance, weekdays, each period
+
+```{r}
+library(arm)
+d1 <- data.frame(Label="Weekday Period 1", 
+      Fraction=invlogit(posterior_sims[, "(Intercept)"]))
+d2 <- data.frame(Label="Weekday Period 2", 
+      Fraction=invlogit(posterior_sims[, "(Intercept)"] +
+                      posterior_sims[, "PeriodSecond"]))
+d3 <- data.frame(Label="Weekday Period 3", 
+      Fraction=invlogit(posterior_sims[, "(Intercept)"] +
+                      posterior_sims[, "PeriodThird"]))
+```
+
+## Posteriors of expected attendance, weekday, each period
+
+```{r, fig.height=4}
+library(ggplot2)
+ggplot(rbind(d1, d2, d3), aes(Fraction)) +
+  geom_density() + facet_wrap(~ Label, ncol=1)
+```
+
+
+## Nice graphical interface 
+
+-- Launches graphical interface for diagnostics/summaries
+
+```
+launch_shinystan(fit2)
+```
+
+## Commands for posterior predictive checking
+
+-- shows density plot of response and some replicated posterior predictive data
+
+```{r, fig.height=3}
+pp_check(fit2)
+```
+
+## Obtain replicated simulations from posterior predictive distribution
+
+```{r}
+ynew <- posterior_predict(fit2)
+```
+
+-- need `ynew` to implement the following posterior predictive checks
+
+-- compare $T(y_{rep})$ with $T_{obs}$ using specific checking function $T$
+
+## Posterior predictive check
+
+- using "median" as the test statistic
+
+```{r, fig.height=3}
+ppc_stat(d$fraction, ynew, stat="median")
+```
+
+## Posterior predictive check
+
+- using "sd" as the test statistic
+
+```{r, fig.height=3}
+ppc_stat(d$fraction, ynew, stat="sd")
+```
+
+## Posterior predictive check
+
+- using "min" as the test statistic
+
+```{r, fig.height=3}
+ppc_stat(d$fraction, ynew, stat="min")
+```
+
+## Exercises
+
+1.  Is the beta regression a reasonable model for this attendance data?
+
+2.  Assuming the answer to question 1 is "no", what models might you try next?
+
+3.  What is the advantage of a Bayesian fit compared to a traditional (ML) fit in this setting?
+
+4.  What alternative priors might you try?
+
+5.  (Logistic Modeling)
+
+Suppose you are interested in looking at the relationship between insecticide dose and kill (1 or 0) for 10 insects.  Here is R code setting up the data and implementing a traditional logistic fit.
+
+```
+dose <- 1:10
+kill <- c(rep(0, 6), rep(1, 4))
+df <- data.frame(dose, kill)
+fit <- glm(kill ~ dose, 
+    family=binomial, data=df)
+```
+
+-- This code will produce a warning?  What is going on?  (Look at the parameter estimates and standard errors.)
+
+-- Run this model using the `stan_glm` function.  Compare the parameter estimates for the two fits.  Why are they so different?
