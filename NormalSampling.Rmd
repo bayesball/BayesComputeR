@@ -1,0 +1,353 @@
+---
+title: "Normal Inference"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      message = FALSE, warnings = FALSE)
+```
+
+## A Gaussian Model of Height (Chapter 4 from Rethinking)
+
+-- Data:  partial census data for the Dobe area !Kung San
+
+-- Load from rethinking package
+
+-- Interested in modeling heights of individuals 18 and over
+
+```{r}
+library(rethinking)
+data(Howell1)
+d2 <- Howell1[Howell1$age >= 18, ]
+```
+
+#### Bayesian Model
+
+-- (Normal Sampling) 
+
+Heights $h_i \sim$ Normal($\mu, \sigma$)
+
+-- (Prior) 
+
+$(\mu, \sigma) \sim g_1(\mu) g_2(\sigma)$
+
+
+#### Questions about prior:
+
+-- What does it mean for $\mu$ and $\sigma$ to be independent?
+
+-- How does one specify priors for $\mu$, and for $\sigma$?
+
+#### Specifying Prior
+
+-- Beliefs about $\mu$ are independent of beliefs about $\sigma$
+
+-- Author chooses vague prior for $\mu$ with mean equal to his height (cm), and large standard deviation (include a large range of plausible mean heights)
+
+-- Likewise choose vague prior for $\sigma$ to allow for large or small spreads of individual heights
+
+-- $\mu \sim N(178, 20), \sigma \sim N(0, 50)$
+
+#### This Prior Implies a Distribution for Heights
+
+-- Simulate 1000 values from prior of $(\mu, \sigma)$
+
+-- Simulate 1000 heights using these random parameters
+
+-- Prior predictive density of heights
+
+#### Simulation of Heights
+
+- "expected distribution of heights, averaged over the prior"
+
+```{r, fig.width=4, fig.height=2.5}
+sample_mu <- rnorm(1000, 170, 20)
+sample_sigma <- runif(1000, 0, 50)
+prior_h <- rnorm(1000, sample_mu, sample_sigma)
+dens( prior_h)
+```
+
+#### Posterior
+
+-- Collect heights from 352 adults
+
+-- Posterior is given by "Prior times Likelihood" recipe
+
+$$
+g(\mu, \sigma | data) \propto g(\mu, \sigma) L(\mu, \sigma)
+$$
+
+-- Likelihood is sampling density of heights, viewed as a function of the parameters
+
+$$
+L(\mu, \sigma) =  \prod N(y_i; \mu, \sigma)
+$$
+
+#### Summarizing the Posterior -- Some Basic Strategies
+
+-- **Grid Approximation**  One computes values of the posterior over a large grid of values of $\mu$ and $\sigma$, and then simulates parameter values from this grid
+
+-- **Quadratic Approximation**  Find the posterior mode and use this to approximate the posterior by a multivariate normal distribution
+
+-- **MCMC** Simulate from the posterior using a MCMC algorithm (Metropolis, Gibbs sampling, Stan)
+
+#### Illustrate Grid Approximation
+
+-- In `LearnBayes` package, write function to compute the log posterior
+
+```{r}
+require(LearnBayes)
+lpost <- function(parameters, y){
+  mu <- parameters[1]
+  sigma <- parameters[2]
+  log_likelihood <- sum(dnorm(y, mu, sigma, log=TRUE))
+  log_prior <- dnorm(mu, 178, 20, log=TRUE) +
+               dunif(sigma, 0, 50, log=TRUE )
+  log_likelihood + log_prior
+}
+```
+
+#### Compute Posterior Over the Grid
+
+-- function `mycontour` produces contours over exact posterior density
+
+```{r}
+mycontour(lpost, c(152, 157, 6.5, 9), d2$height)
+```
+
+#### Try Quadratic Approximation
+
+-- In `resampling` package, write some R code that defines the model
+
+```{r}
+flist <- alist(
+  height ~ dnorm( mu, sigma ) ,
+  mu ~ dnorm( 178, 20 ) ,
+  sigma ~ dunif( 0, 50)
+)
+```
+
+- Fit model using `map` function
+
+```{r}
+m4.1 <- map( flist, data = d2)
+```
+
+#### Normal Approximation
+
+- Posterior of $(\mu, \sigma)$ is approximately bivariate normal
+
+- Extract mean and standard deviations of each parameter by `precis` function
+
+```{r}
+precis( m4.1 )
+```
+
+#### Interpret
+
+- We have Bayesian interval estimates for each parameter
+
+- $P(153.95 < \mu < 155.27) \approx 0.89$
+
+- $P(7.27 < \sigma < 8.20) \approx 0.89$
+
+- Why 89 percent intervals?
+
+#### What Impact Does the Prior Have?
+
+- Try different choices for prior and see impact on the posterior intervals
+
+- Author tries a N(178, 0.1) prior for $\mu$ -- do you think this make a difference in the posterior?
+
+- Here we have a lot of data, so ...
+
+#### Different Prior
+
+- Applying a precise prior on $\mu$ -- does it make a difference?
+
+```{r}
+m4.2 <- map(flist <- alist(
+  height ~ dnorm( mu, sigma ) ,
+  mu ~ dnorm( 178, 0.1 ) ,
+  sigma ~ dunif( 0, 50)
+  ), data=d2
+)
+precis(m4.2)
+```
+
+#### Sampling from the Posterior
+
+-- If we use quadratic approximation, then posterior will be (approximately) multivariate normal with particular mean and var-cov matrix
+
+```{r}
+vcov( m4.1 )
+```
+
+-- We sample from the posterior by simulating many values from this normal distribution
+
+#### Using rethinking Package
+
+```{r}
+post <- extract.samples( m4.1, 1000)
+head(post)
+```
+
+#### Graph of the Posterior
+
+```{r}
+library(ggplot2)
+ggplot(post, aes(mu, sigma)) + geom_point()
+```
+
+#### Can Perform Inference from Simulated Draws
+
+- What is the probability $mu$ is larger than 155 cm?
+
+```{r}
+library(dplyr)
+summarize(post, Prob=mean(mu > 155))
+```
+
+- 80 percent probability interval for $\sigma$
+
+```{r}
+summarize(post, LO = quantile(sigma, .1),
+                HI = quantile(sigma, .9))
+```
+
+#### Can Learn About Functions of the Parameters
+
+- Suppose you are interested in coefficient of variation
+$$
+CV = \mu / \sigma
+$$
+
+- Simulate from posterior distribution of $CV$ by computing $CV$ for each simulated draw of $(\mu, \sigma)$
+
+```{r}
+post <- mutate(post, CV = mu / sigma)
+```
+
+- 80 percent interval estimate for $CV$
+
+```{r}
+summarize(post, LO = quantile(CV, .1),
+                HI = quantile(CV, .9))
+```
+
+#### Prediction
+
+- Suppose we are interested in predicting the maximum height of a future sample of size 10 - $y_S$
+
+- Interested in the predictive density
+$$
+f(y_S) = \int f(y_S | \mu, \sigma) g(\mu, \sigma) d\mu d\sigma
+$$
+
+where $g(\mu, \sigma)$ represents my current beliefs about the parameters
+
+#### Simulating from the Predictive Density
+
+- Can be difficult to directly compute $f(y_S)$
+
+- Simulation from $f$ is straightforward:
+
+1.  Simulate $(\mu, \sigma)$ from $g()$
+
+2.  Using these simulated draws, simulate $y_S$ from $f(y_S, \mu, \sigma)$
+
+(We have already done this earlier in this part)
+
+#### Simulation of Predictive Density
+
+- This simulates one future sample of 10 and computes the maximum height
+
+```{r}
+one_sample <- function(j){
+  pars <- post[j, ]
+  ys <- rnorm(10, pars$mu, pars$sigma)
+  max(ys)
+}
+```
+
+- Repeat this for all 1000 posterior draws
+
+```{r}
+library(tidyverse)
+MS <- map_dbl(1:1000, one_sample)
+```
+
+#### Posterior Predictive Density of Max
+
+```{r, fig.width=4, fig.height=2.5}
+dens(MS)
+```
+
+#### Prediction Interval
+
+- Construct a 80 percent prediction interval for $M$
+
+```{r}
+quantile(MS, c(.10, .90))
+```
+
+- Interval incorporates two types of uncertainty 
+
+1. don't know values of parameters (inferential uncertainty)
+
+2. don't know values of heights conditional on parameters (sampling uncertainty)
+
+
+#### Exercises
+
+Suppose you are interested in estimating the mean number of traffic accidents $\mu$ in your home town.  We assume that the actual number of accidents $y$ has a Poisson distribution with mean $\mu$.
+
+1.  Make a best guess at the value of $\mu$.
+
+2.  Suppose you are very sure about your guess in part 1.  Construct a normal prior which reflects this belief.
+
+3.  Suppose instead that the "best guess" in part 1 was likely inaccurate.  Construct a normal prior that reflects this belief.
+
+4.  Suppose you collect the numbers of traffic accidents for 10 days in your home town -- call these numbers $y_1, ..., y_{10}$.  Write down the Bayesian model including the sampling distribution and the prior distribution from part 1.
+
+5.  Write down the Bayesian model as a script using the `resampling` package language.
+
+
+6.  Describe how you could summarize the posterior density for $\lambda$ and simulate 1000 draws from the posterior.
+
+7.  Based on the simulated draws from the posterior, how can you construct a 90 percent interval estimate for $\lambda$?
+
+8.  How will your Bayesian interval in part 7.  compare with a traditional 90% frequentist confidence interval?
+
+9.  Suppose you want to predict the number of traffic accidents $y_N$ in a day next week.  Explain how you would produce a simulated sample from the predictive distribution of $y_N$.
+
+10.  What is one advantage of a Bayesian approach over a frequentist approach for this particular problem?
+
+
+11.  I collected the numbers of traffic accidents in Lincoln, Nebraska for 10 summer days in 2016:
+
+36, 26, 35, 31, 12, 14, 46, 19, 37, 28
+
+--  Assuming Poisson sampling with a weakly-informative prior, find a 90% interval estimate for $\lambda$.
+
+--  Find a 90% prediction interval for the number of traffic accidents in a future summer day in Lincoln.
+
+-- Explain what each line of code is doing below.
+
+
+```
+library(rethinking)
+d <- data.frame(y = c(36, 26, 35, 31, 12, 
+                      14, 46, 19, 37, 28))
+bfit <- map(flist <- alist(
+  y ~ dpois( lambda ) ,
+  lambda ~ dnorm( 30,  10 )
+), data=d
+)
+precis(bfit)
+sim_draws <- extract.samples(bfit, 1000)
+ynew <- rpois(1000, sim_draws$lambda)
+quantile(ynew, c(.05, .95))
+```
+
