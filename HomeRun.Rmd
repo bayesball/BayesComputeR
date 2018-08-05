@@ -130,11 +130,11 @@ fit_pp <- glmer(HR ~ (1 | Player) +
 fit_pp
 ```
 
-## Use STAN to Fit the Partial Pool Model
+## Use brms package (STAN) to Fit the Partial Pool Model
 
 ```{r}
-library(rstanarm)
-fit_partialpool <- stan_glmer(HR ~ (1 | Player) + 
+library(brms)
+fit_partialpool <- brm(HR ~ (1 | Player) + 
                                 offset(log(PA)),
                               family=poisson,
                               data=d2017)
@@ -149,34 +149,40 @@ prior_summary(fit_partialpool)
 ## Learn about random effects standard deviation
 
 ```{r, fig.height=4}
-posterior <- as.matrix(fit_partialpool)
-ggplot(data.frame(Sigma=sqrt(posterior[, 325])), 
-       aes(Sigma)) +
+library(coda)
+posterior <- mcmc(posterior_samples(fit_partialpool))
+ggplot(posterior_samples(fit_partialpool, "sd_Player__Intercept"), 
+       aes(sd_Player__Intercept)) +
       geom_density()
+```
+
+## Put Simulated Samples in Tidy Format
+
+```{r}
+library(tidybayes)
+posterior %>% 
+  spread_draws(r_Player[Player, Intercept], b_Intercept)  %>% 
+  mutate(Rate = exp(r_Player + b_Intercept)) -> m
 ```
 
 ## Obtain Rate Estimates
 
 ```{r, echo=FALSE}
-shift_draws <- function(draws) {
-  exp(sweep(draws[, -c(1, 325)], MARGIN = 1, 
-        STATS = draws[, 1], 
-        FUN = "+"))
-}
-Sim_Rates <- shift_draws(as.matrix(fit_partialpool))
-Post_medians <- apply(Sim_Rates, 2, median)
-d_estimates <- data.frame(PA = exp(fit_partialpool$offset),
-                          Estimate = Post_medians,
-                          Type="Partial Pool")
-Estimates <- data.frame(PA = d2017$PA,
-                        Estimate = d2017$rate_estimates,
-                        Type="Individual")
+library(stringr)
+m %>% 
+  group_by(Player) %>% 
+  summarize(Post_Median = median(Rate))  -> post_summaries
+d2017 %>% 
+  mutate(Player = str_replace_all(Player, " ", "."))  %>% 
+  inner_join(post_summaries, by="Player") -> d2017
 ```
 
+## Compare Individual and Partially Pooled Estimates
+
 ```{r, echo=FALSE}
-ggplot(rbind(d_estimates, Estimates), 
-       aes(PA, Estimate, color=Type)) + geom_point() +
-  geom_smooth(se=FALSE)
+ggplot(d2017) +
+  geom_point(mapping = aes(PA, rate_estimates)) +
+  geom_point(mapping = aes(PA, Post_Median), color = "red")
 ```
 
 ## Exercises
