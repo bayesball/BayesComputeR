@@ -26,5 +26,7 @@ Attendance.Rmd - Modeling fractions of capacity attendance using a beta regressi
 
 HomeRun.Rmd -- Modeling home run rates using a varying intercept model
 
+BBS_Survey.Rmd -- Multilevel estimate of some trend estimates
+
 Coffee_Shop.Rmd - Modeling varying intercepts and varying slopes for waiting times
 
