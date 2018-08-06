@@ -14,7 +14,7 @@ knitr::opts_chunk$set(echo = FALSE,
 
 -- Nice introduction to Bayesian ideas
 
--- Associated R package (rethinking) that provides interface to Stan software
+-- Illustrate the R package brms that provides interface to Stan software
 
 -- Use a "coffee shop" illustration of multilevel modeling
 
@@ -114,9 +114,9 @@ Sigma <- matrix( c(sigma_a^2, cov_ab, cov_ab, sigma_b^2),
 Simulate the varying effects for the coffee shops.
 
 ```{r, echo=TRUE}
-N_cafes <- 20
 library(MASS)
-set.seed(5) # used to replicate example
+N_cafes <- 20
+set.seed(1234) # used to replicate example
 vary_effects <- mvrnorm( N_cafes , Mu , Sigma )
 a_cafe <- vary_effects[, 1]
 b_cafe <- vary_effects[, 2]
@@ -127,7 +127,6 @@ b_cafe <- vary_effects[, 2]
 Simulate the actual waiting times (we are assuming that the sampling standard deviation is $\sigma_y = 0.5$).
 
 ```{r, echo=TRUE}
-N_cafes <- 20
 N_visits <- 10
 afternoon <- rep(0:1, N_visits * N_cafes / 2)
 cafe_id <- rep( 1:N_cafes , each=N_visits )
@@ -143,8 +142,8 @@ d <- data.frame( cafe=cafe_id ,
 
 ```{r}
 library(ggplot2)
-d0 <- data.frame(cafe=rep(1:20, 2),
-                 afternoon=c(rep(0, 20), rep(1, 20)),
+d0 <- data.frame(cafe=rep(1:N_cafes, 2),
+                 afternoon=c(rep(0, N_cafes), rep(1, N_cafes)),
                  wait=c(a_cafe, a_cafe + b_cafe))
 d0$Cafe <- paste("Cafe", d0$cafe)
 d$Cafe <- paste("Cafe", d$cafe)
@@ -155,76 +154,74 @@ ggplot(d0, aes(afternoon, wait)) + geom_line() +
 ```
 
 
-## Using STAN
+## Using function brm to fit the model
 
-- Write a Stan script defining the model (similar to a
-JAGS model script)
-
-- Bring your data into R, define all data used in
-model description
-
-- Use the function stan from the rstan package to
-fit the model using Stan 
-
-- Even easier using the rethinking package
-
-- Extract samples and summarize/plot using the coda
-package
-
-## Using STAN to fit the model
-
-Okay, we are ready to use STAN to fit the model to the simulated data.
+Okay, we are ready to  fit the model to the simulated data.  The function brm provides a simple interface to Stan sampling.
 
 ```{r, echo=TRUE}
-library(rethinking)
-m13.1 <- map2stan(
-  alist(
-    wait ~ dnorm( mu , sigma ),
-    mu <- a_cafe[cafe] + b_cafe[cafe] * afternoon,
-    c(a_cafe, b_cafe)[cafe] ~ dmvnorm2(c(a, b), sigma_cafe, Rho),
-    a ~ dnorm(0, 10),
-    b ~ dnorm(0, 10),
-    sigma_cafe ~ dcauchy(0, 2),
-    sigma ~ dcauchy(0, 2),
-    Rho ~ dlkjcorr(2)
-  ) ,
-  data=d ,
-  iter=5000 , warmup=2000 , chains=2 )
+library(brms)
+newfit <- brm(wait ~ afternoon + (1 + afternoon | cafe),
+              data = d, iter=5000)
 ```
 
 ## Posterior Summaries
 
-Extract simulated values by the ``extract.samples`` function.  Note that post is a list where each component is a matrix of simulated draws of different parameters.  For example, `sigma_cafe` is a matrix with 6000 rows and two columns where the columns correspond to $\sigma_a$ and $\sigma_b$.
+Here is a summary of the fit:
 
-```{r}
-post <- extract.samples(m13.1)
-names(post)
+```{r, echo=TRUE}
+summary(newfit)
 ```
 
-## Summary of Posterior of Random Effects ($\sigma, \sigma_a, \sigma_b)$
-
-```{r}
-library(coda)
-plot(mcmc(cbind(post$sigma, post$sigma_cafe)))
-```
-
-## Summary of Posterior of Random Effects ($\sigma, \sigma_a, \sigma_b)$
-
-```{r}
-library(coda)
-summary(mcmc(cbind(post$sigma, post$sigma_cafe)))
-```
-
-## Check
-
-- In our simulation of the fake data, we assumed
-$$
-\sigma = 0.5, \sigma_a = 1, \sigma_b = 0.5
-$$
+## Takeaway
 
 - Posterior estimates of these parameters are close to these values
 
 - Gives some reassurance that the MCMC algorithm is programmed correctly
+
+## Posterior Simulated Sample
+
+
+```{r, echo=TRUE}
+library(coda)
+post <- mcmc(posterior_samples(newfit))
+```
+
+## Collect Posterior Draws of Standard Deviations
+
+```{r, echo=TRUE}
+library(tidyverse)
+library(tidybayes)
+post %>% 
+  gather_draws(sd_cafe__Intercept,
+               sd_cafe__afternoon) -> m2
+head(m2)
+```
+
+## Marginal Posteriors of Standard Deviations
+
+```{r, echo=TRUE}
+ggplot(m2, aes(.value, color = .variable)) +
+  geom_density()
+```
+
+## Tidy Collection of Posterior Draws
+
+```{r, echo=TRUE}
+post %>% 
+  spread_draws(r_cafe[cafe, Intercept],
+               r_cafe[cafe, effect],
+               b_Intercept, b_afternoon) -> m
+head(m)
+```
+
+## Posterior densities of random slopes
+
+```{r, echo=TRUE}
+ggplot(filter(m, effect == "afternoon"),
+       aes(r_cafe + b_afternoon, group = cafe)) +
+   geom_density()
+```
+
 
 ## Questions: Waiting Times at a Coffee Shop
 
