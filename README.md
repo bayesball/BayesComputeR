@@ -4,9 +4,9 @@ This R Markdown documents and associated datasets are used for a short course "B
 
 # Packages -- the following packages are used in these examples and should be installed at first
 
-arm - Data Analysis Using Multilevel/Hierarchical Models
-BayesTestStreak (available from GitHub) - Testing Streakiness in Binary Sequences
-betareg - Beta Regression
+- arm - Data Analysis Using Multilevel/Hierarchical Models
+- BayesTestStreak (available from GitHub) - Testing Streakiness in Binary Sequences
+- betareg - Beta Regression
 brms - Bayesian Regression Models using 'Stan'
 coda - Output Analysis and Diagnostics for MCMC
 lme4 - Linear Mixed-Effects Models using 'Eigen' and S4
