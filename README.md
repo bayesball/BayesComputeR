@@ -15,6 +15,7 @@ This R Markdown documents and associated datasets are used for a short course "B
 - rjags - Bayesian Graphical Models using MCMC (JAGS software also needs to be installed)
 - rstanarm - Bayesian Applied Regression Modeling via Stan
 - TeachBayes - Teaching Bayesian Inference
+- tidybayes - Tidy Data and 'Geoms' for Bayesian Models
 - tidyverse - suite of packages of the Tidyverse
 
 ### Part I - Basic Bayes
